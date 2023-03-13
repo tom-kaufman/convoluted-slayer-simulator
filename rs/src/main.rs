@@ -1,6 +1,5 @@
 use std::collections::HashMap;
-use std::error;
-use tokio::sync::Mutex;
+use tokio::sync::RwLock;
 use std::fmt::Display;
 use thiserror::Error;
 
@@ -20,11 +19,7 @@ impl Display for MyError {
 
 #[tokio::main]
 async fn main() -> Result<(), MyError> {
-    // outer map: each key corresponds to one of the simulated Slayers
-    // inner map: each key corresponds to one of the slayer monsters;
-    //            the first u32 in the tuple is the number killed, and
-    //            the second rerpresents the total xp 
-    let mut map: HashMap<u32, Mutex<HashMap<u32,(u32, u32)>>> = HashMap::new();
+    // -- start config --
 
     // n: How many Slayers to simulate
     let n = 100_u32;
@@ -40,11 +35,17 @@ async fn main() -> Result<(), MyError> {
         return Err(MyError::InvalidConfig);
     }
 
+    // outer map: each key corresponds to one of the simulated Slayers
+    // inner map: each key corresponds to one of the slayer monsters;
+    //            the first u32 in the tuple is the number killed, and
+    //            the second rerpresents the total xp 
+    let mut map: HashMap<u32, RwLock<HashMap<u32,(u32, u32)>>> = HashMap::new();
+
     // amount of xp each Slayer needs to gain
-    //let delta_xp
+    let delta_xp = end_xp - start_xp;
 
     for i in 0..n {
-        let x = map.entry(i).or_insert(Mutex::new(HashMap::new()));
+        let x = map.entry(i).or_insert(RwLock::new(HashMap::new()));
     }
 
     println!("Hello, world!");
