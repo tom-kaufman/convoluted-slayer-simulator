@@ -1,4 +1,4 @@
-use std::{collections::HashMap, sync::Arc};
+use std::{collections::HashMap, sync::Arc, ops::DerefMut};
 use tokio::sync::Mutex;
 use std::fmt::Display;
 use thiserror::Error;
@@ -42,11 +42,13 @@ fn total_xp(slayer: &HashMap<u32, (u32, u32)>) -> u32 {
     result
 }
 
-async fn slayer_loop(slayer: &mut HashMap<u32, (u32, u32)>, delta_xp: u32) {
-    while total_xp(slayer) < delta_xp {
+async fn slayer_loop(slayer: Arc<Mutex<HashMap<u32, (u32, u32)>>>, delta_xp: u32) {
+    let mut slayer_lock = slayer.lock().await;
+    let mut this_slayer = slayer_lock.deref_mut();
+    while total_xp(this_slayer) < delta_xp {
         let task = slayer_task();
         for _ in 0..task.amount {
-            let this_monster = slayer.entry(task.monster).or_insert((0, 0));
+            let this_monster = this_slayer.entry(task.monster).or_insert((0, 0));
             let (mut kills, mut xp) = *this_monster;
             kills += 1;
             xp += monster_xp(task.monster);
@@ -63,7 +65,7 @@ async fn main() -> Result<(), MyError> {
     // initial xp for each Slayer
     let start_xp = 0_u32;
     // final xp for each Slayer
-    let end_xp = 200_000_000_u32;
+    let end_xp = 5_u32;
 
     // -- end config --
 
@@ -72,34 +74,19 @@ async fn main() -> Result<(), MyError> {
         return Err(MyError::InvalidConfig);
     }
 
-    // vec: each item corresponds to one of the simulated Slayers
-    // hash map: each key corresponds to one of the slayer monsters;
-    //           the first u32 in the tuple is the number killed, and
-    //           the second rerpresents the total xp 
-    let mut v: Vec<Mutex<HashMap<u32, (u32, u32)>>> = vec![];
-
     // amount of xp each Slayer needs to gain
     let delta_xp = end_xp - start_xp;
 
-    for _ in 0..n {
-        v.push(Mutex::new(HashMap::new()));
-    }
-
+    let mut slayers: Vec<Arc<Mutex<HashMap<u32, (u32, u32)>>>> = vec![];
     let mut handles: Vec<tokio::task::JoinHandle<()>> = vec![];
 
-    // for (i, mut slayer) in v.iter().enumerate() {
-    let mut i = 0;
-    for mut slayer in v {
-        println!("moving slayer #{i} to his own thread");
-        handles.push(tokio::spawn(async move {
-            slayer_loop(slayer.get_mut(), delta_xp).await;
-        }));
-        println!("finished slayer #{i}!\n");
-        i += 1;  // easier than enumerate
-    }
-
-    for handle in handles {
-        handle.await;
+    for i in 0..n {
+        slayers.push(Arc::new(Mutex::new(HashMap::new())));
+        let slayer: Arc<Mutex<HashMap<u32, (u32, u32)>>> = Arc::clone(&slayers[i as usize]);
+        let handle = tokio::spawn(async move {
+            slayer_loop(slayer, delta_xp).await;
+        });
+        handles.push(handle);
     }
 
     Ok(())
