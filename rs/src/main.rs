@@ -1,7 +1,7 @@
-use std::{collections::HashMap, sync::Arc, ops::DerefMut};
-use tokio::sync::Mutex;
 use std::fmt::Display;
+use std::{collections::HashMap, ops::DerefMut, sync::Arc};
 use thiserror::Error;
+use tokio::sync::Mutex;
 
 #[derive(Debug, Error)]
 enum MyError {
@@ -16,7 +16,7 @@ struct SlayerTask {
 impl Display for MyError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let error_text = match self {
-            MyError::InvalidConfig => { "Invalid configuration!" }
+            MyError::InvalidConfig => "Invalid configuration!",
         };
         write!(f, "{}", error_text)
     }
@@ -24,14 +24,16 @@ impl Display for MyError {
 
 // placeholder function, later we'll send a request to localhost:5001
 fn slayer_task() -> SlayerTask {
-    SlayerTask { monster: 1, amount: 10 }
+    SlayerTask {
+        monster: 1,
+        amount: 10,
+    }
 }
-
 
 // placeholder function, later we'll send a request to localhost:5002
 fn monster_xp(monster: u32) -> u32 {
     assert_eq!(monster, 1);
-    return 50;
+    50
 }
 
 fn total_xp(slayer: &HashMap<u32, (u32, u32)>) -> u32 {
@@ -44,15 +46,22 @@ fn total_xp(slayer: &HashMap<u32, (u32, u32)>) -> u32 {
 
 async fn slayer_loop(slayer: Arc<Mutex<HashMap<u32, (u32, u32)>>>, delta_xp: u32) {
     let mut slayer_lock = slayer.lock().await;
-    let mut this_slayer = slayer_lock.deref_mut();
+    let this_slayer = slayer_lock.deref_mut();
     while total_xp(this_slayer) < delta_xp {
         let task = slayer_task();
+        let mut kills = 0;
+        let mut xp = 0;
         for _ in 0..task.amount {
-            let this_monster = this_slayer.entry(task.monster).or_insert((0, 0));
-            let (mut kills, mut xp) = *this_monster;
             kills += 1;
             xp += monster_xp(task.monster);
         }
+        this_slayer
+            .entry(task.monster)
+            .and_modify(|(previous_kills, previous_xp)| {
+                *previous_kills += kills;
+                *previous_xp += xp;
+            })
+            .or_insert((kills, xp));
     }
 }
 
@@ -61,11 +70,11 @@ async fn main() -> Result<(), MyError> {
     // -- start config --
 
     // n: How many Slayers to simulate
-    let n = 100_u32;
+    let n = 100_000_u32;
     // initial xp for each Slayer
     let start_xp = 0_u32;
     // final xp for each Slayer
-    let end_xp = 5_u32;
+    let end_xp = 200_000_000_u32;
 
     // -- end config --
 
@@ -77,6 +86,7 @@ async fn main() -> Result<(), MyError> {
     // amount of xp each Slayer needs to gain
     let delta_xp = end_xp - start_xp;
 
+    #[allow(clippy::type_complexity)]
     let mut slayers: Vec<Arc<Mutex<HashMap<u32, (u32, u32)>>>> = vec![];
     let mut handles: Vec<tokio::task::JoinHandle<()>> = vec![];
 
