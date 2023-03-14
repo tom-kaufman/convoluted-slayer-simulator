@@ -4,13 +4,17 @@ use std::{collections::HashMap, ops::DerefMut, sync::Arc};
 use thiserror::Error;
 use tokio::runtime::Builder;
 use tokio::sync::Mutex;
+use serde::Deserialize;
 
 #[derive(Debug, Error)]
 enum MyError {
     InvalidConfig,
     HandleAwait,
+    ReqwestSlayerTask,
+    ReqwestSlayerTaskJson,
 }
 
+#[derive(Deserialize, Debug)]
 struct SlayerTask {
     monster: u32,
     amount: u32,
@@ -21,17 +25,27 @@ impl Display for MyError {
         let error_text = match self {
             MyError::InvalidConfig => "Invalid configuration!",
             MyError::HandleAwait => "Some error happened while waiting for a join handle",
+            MyError::ReqwestSlayerTask => "Some error happened while asking for a slayer task",
+            MyError::ReqwestSlayerTaskJson => "Some error happened while parsing slayer task json",
         };
         write!(f, "{}", error_text)
     }
 }
 
 // placeholder function, later we'll send a request to localhost:5001
-async fn slayer_task() -> SlayerTask {
-    SlayerTask {
-        monster: 1,
-        amount: 10,
-    }
+async fn slayer_task() -> Result<SlayerTask, MyError> {
+    let resp = match reqwest::get("http://127.0.0.1:5001/").await {
+        Ok(x) => { x }
+        Err(_) => { return Err(MyError::ReqwestSlayerTask); }
+    };
+    let j = match resp.json::<SlayerTask>().await {
+        Ok(x) => { x}
+        Err(e) => { 
+            println!("e: {}", e);
+            return Err(MyError::ReqwestSlayerTaskJson); 
+        }
+    };
+    Ok(j)
 }
 
 // placeholder function, later we'll send a request to localhost:5002
@@ -47,11 +61,11 @@ fn total_xp(slayer: &HashMap<u32, (u32, f32)>) -> f32 {
     result
 }
 
-async fn slayer_loop(slayer: Arc<Mutex<HashMap<u32, (u32, f32)>>>, delta_xp: f32) {
+async fn slayer_loop(slayer: Arc<Mutex<HashMap<u32, (u32, f32)>>>, delta_xp: f32) -> Result<(), MyError> {
     let mut slayer_lock = slayer.lock().await;
     let this_slayer = slayer_lock.deref_mut();
     while total_xp(this_slayer) < delta_xp {
-        let task = slayer_task().await;
+        let task = slayer_task().await?;
         let mut kills = 0;
         let mut xp = 0.;
         for _ in 0..task.amount {
@@ -66,6 +80,7 @@ async fn slayer_loop(slayer: Arc<Mutex<HashMap<u32, (u32, f32)>>>, delta_xp: f32
             })
             .or_insert((kills, xp));
     }
+    Ok(())
 }
 
 
@@ -91,7 +106,7 @@ fn main() -> Result<(), MyError> {
 
     #[allow(clippy::type_complexity)]
     let mut slayers: Vec<Arc<Mutex<HashMap<u32, (u32, f32)>>>> = vec![];
-    let mut handles: Vec<tokio::task::JoinHandle<()>> = vec![];
+    let mut handles: Vec<tokio::task::JoinHandle<Result<(), MyError>>> = vec![];
 
     // create tokio runtime
     let runtime = tokio::runtime::Builder::new_multi_thread()
@@ -106,8 +121,12 @@ fn main() -> Result<(), MyError> {
             slayers.push(Arc::new(Mutex::new(HashMap::new())));
             let slayer: Arc<Mutex<HashMap<u32, (u32, f32)>>> = Arc::clone(&slayers[i as usize]);
             let handle = tokio::spawn(async move {
-                slayer_loop(slayer, delta_xp).await;
-                println!("slayer {i} met xp goal!")
+                match slayer_loop(slayer, delta_xp).await {
+                    Ok(o) => {  }
+                    Err(e) => { return Err(e) }
+                }
+                println!("slayer {i} met xp goal!");
+                Ok(())
             });
             handles.push(handle);
         }
