@@ -1,10 +1,9 @@
+use serde::Deserialize;
 use std::fmt::Display;
 use std::ops::Deref;
 use std::{collections::HashMap, ops::DerefMut, sync::Arc};
 use thiserror::Error;
-use tokio::runtime::Builder;
 use tokio::sync::Mutex;
-use serde::Deserialize;
 
 #[derive(Debug, Error)]
 enum MyError {
@@ -34,7 +33,9 @@ impl Display for MyError {
             MyError::HandleAwait => "Some error happened while waiting for a join handle",
             MyError::ReqwestSlayerTask => "Some error happened while asking for a slayer task",
             MyError::ReqwestSlayerTaskJson => "Some error happened while parsing slayer task json",
-            MyError::ReqwestMonsterXp => "Some error happened while asking how much xp to reward for a monster",
+            MyError::ReqwestMonsterXp => {
+                "Some error happened while asking how much xp to reward for a monster"
+            }
             MyError::ReqwestMonsterXpJson => "Some error happened while parsing slayer xp json",
         };
         write!(f, "{}", error_text)
@@ -43,12 +44,18 @@ impl Display for MyError {
 
 async fn slayer_task() -> Result<SlayerTask, MyError> {
     let resp = match reqwest::get("http://127.0.0.1:5001/").await {
-        Ok(x) => { x }
-        Err(_) => { return Err(MyError::ReqwestSlayerTask); }
+        Ok(x) => x,
+        Err(_) => {
+            println!("!!!!!!!!!!!!!!!!!!!!!!!!!!!1");
+            return Err(MyError::ReqwestSlayerTask);
+        }
     };
     let j = match resp.json::<SlayerTask>().await {
-        Ok(x) => { x}
-        Err(e) => { return Err(MyError::ReqwestSlayerTaskJson); }
+        Ok(x) => x,
+        Err(_) => {
+            println!("!!!!!!!!!!!!!!!!!!!!!!!!!!!2");
+            return Err(MyError::ReqwestSlayerTaskJson);
+        }
     };
     Ok(j)
 }
@@ -56,12 +63,19 @@ async fn slayer_task() -> Result<SlayerTask, MyError> {
 async fn monster_xp(monster: u32) -> Result<f32, MyError> {
     let url = format!("http://127.0.0.1:5002/{monster}");
     let resp = match reqwest::get(url).await {
-        Ok(x) => { x }
-        Err(_) => { return Err(MyError::ReqwestMonsterXp); }
+        Ok(x) => x,
+        Err(e) => {
+            println!("e: {e}");
+            println!("!!!!!!!!!!!!!!!!!!!!!!!!!!!3");
+            return Err(MyError::ReqwestMonsterXp);
+        }
     };
     match resp.json::<SlayerXp>().await {
-        Ok(x) => { Ok(x.xp) }
-        Err(e) => { return Err(MyError::ReqwestMonsterXpJson); }
+        Ok(x) => Ok(x.xp),
+        Err(_) => {
+            println!("!!!!!!!!!!!!!!!!!!!!!!!!!!!4");
+            return Err(MyError::ReqwestMonsterXpJson);
+        }
     }
 }
 
@@ -73,10 +87,15 @@ fn total_xp(slayer: &HashMap<u32, (u32, f32)>) -> f32 {
     result
 }
 
-async fn slayer_loop(slayer: Arc<Mutex<HashMap<u32, (u32, f32)>>>, delta_xp: f32) -> Result<(), MyError> {
+async fn slayer_loop(
+    slayer: Arc<Mutex<HashMap<u32, (u32, f32)>>>,
+    delta_xp: f32,
+) -> Result<(), MyError> {
     let mut slayer_lock = slayer.lock().await;
     let this_slayer = slayer_lock.deref_mut();
-    while total_xp(this_slayer) < delta_xp {
+    let mut current_xp = total_xp(this_slayer);
+    println!("starting slayer loop with current_xp={current_xp}, delta_xp={delta_xp}");
+    while current_xp < delta_xp {
         let task = slayer_task().await?;
         let mut kills = 0;
         let mut xp = 0.;
@@ -91,16 +110,17 @@ async fn slayer_loop(slayer: Arc<Mutex<HashMap<u32, (u32, f32)>>>, delta_xp: f32
                 *previous_xp += xp;
             })
             .or_insert((kills, xp));
+        current_xp = total_xp(this_slayer);
+        println!("Current xp after this task: {current_xp}");
     }
     Ok(())
 }
-
 
 fn main() -> Result<(), MyError> {
     // -- start config --
 
     // n: How many Slayers to simulate
-    let n = 10_u32;
+    let n = 1_u32;
     // initial xp for each Slayer
     let start_xp = 0_f32;
     // final xp for each Slayer
@@ -115,6 +135,7 @@ fn main() -> Result<(), MyError> {
 
     // amount of xp each Slayer needs to gain
     let delta_xp = end_xp - start_xp;
+    println!("delta_xp = {delta_xp}");
 
     #[allow(clippy::type_complexity)]
     let mut slayers: Vec<Arc<Mutex<HashMap<u32, (u32, f32)>>>> = vec![];
@@ -134,19 +155,23 @@ fn main() -> Result<(), MyError> {
             let slayer: Arc<Mutex<HashMap<u32, (u32, f32)>>> = Arc::clone(&slayers[i as usize]);
             let handle = tokio::spawn(async move {
                 match slayer_loop(slayer, delta_xp).await {
-                    Ok(o) => {  }
-                    Err(e) => { return Err(e) }
+                    Ok(_) => {}
+                    Err(e) => {
+                        println!("!!!!!!!!!!!!!!!!!!!!!!!!!!!5");
+                        return Err(e);
+                    }
                 }
                 println!("slayer {i} met xp goal!");
                 Ok(())
             });
             handles.push(handle);
         }
-    
+
         for handle in handles {
             match handle.await {
                 Ok(_) => {}
                 Err(_) => {
+                    println!("!!!!!!!!!!!!!!!!!!!!!!!!!!!6");
                     return Err(MyError::HandleAwait);
                 }
             }
@@ -167,6 +192,7 @@ fn main() -> Result<(), MyError> {
 
     for (i, slayer) in slayers_convenient.iter().enumerate() {
         println!("slayer {i}:\n{:?}\n\n", slayer);
+        println!("total xp: {}", total_xp(slayer));
     }
 
     Ok(())
