@@ -1,6 +1,8 @@
 use std::fmt::Display;
+use std::ops::Deref;
 use std::{collections::HashMap, ops::DerefMut, sync::Arc};
 use thiserror::Error;
+use tokio::runtime::Builder;
 use tokio::sync::Mutex;
 
 #[derive(Debug, Error)]
@@ -67,8 +69,8 @@ async fn slayer_loop(slayer: Arc<Mutex<HashMap<u32, (u32, u32)>>>, delta_xp: u32
     }
 }
 
-#[tokio::main]
-async fn main() -> Result<(), MyError> {
+
+fn main() -> Result<(), MyError> {
     // -- start config --
 
     // n: How many Slayers to simulate
@@ -92,22 +94,49 @@ async fn main() -> Result<(), MyError> {
     let mut slayers: Vec<Arc<Mutex<HashMap<u32, (u32, u32)>>>> = vec![];
     let mut handles: Vec<tokio::task::JoinHandle<()>> = vec![];
 
-    for i in 0..n {
-        println!("moving slayer {i} to his own thread");
-        slayers.push(Arc::new(Mutex::new(HashMap::new())));
-        let slayer: Arc<Mutex<HashMap<u32, (u32, u32)>>> = Arc::clone(&slayers[i as usize]);
-        let handle = tokio::spawn(async move {
-            slayer_loop(slayer, delta_xp).await;
-            println!("slayer {i} met xp goal!")
-        });
-        handles.push(handle);
-    }
+    // create tokio runtime
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .unwrap();
 
-    for handle in handles {
-        match handle.await {
-            Ok(_) => {}
-            Err(_) => { return Err(MyError::HandleAwait); }
+    // our async part of the mainloop
+    runtime.block_on(async {
+        for i in 0..n {
+            println!("moving slayer {i} to his own thread");
+            slayers.push(Arc::new(Mutex::new(HashMap::new())));
+            let slayer: Arc<Mutex<HashMap<u32, (u32, u32)>>> = Arc::clone(&slayers[i as usize]);
+            let handle = tokio::spawn(async move {
+                slayer_loop(slayer, delta_xp).await;
+                println!("slayer {i} met xp goal!")
+            });
+            handles.push(handle);
         }
+    
+        for handle in handles {
+            match handle.await {
+                Ok(_) => {}
+                Err(_) => {
+                    return Err(MyError::HandleAwait);
+                }
+            }
+        }
+
+        Ok(())
+    })?;
+
+    // Unpack slayers from Arc<Mutex<T>>
+    let slayers_convenient = slayers
+        .iter()
+        .map(|slayer| {
+            let slayer_lock = runtime.block_on(slayer.lock());
+            let x = slayer_lock.deref();
+            x.clone()
+        })
+        .collect::<Vec<HashMap<u32, (u32, u32)>>>();
+
+    for (i, slayer) in slayers_convenient.iter().enumerate() {
+        println!("slayer {i}:\n{:?}\n\n", slayer);
     }
 
     Ok(())
