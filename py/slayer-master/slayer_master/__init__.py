@@ -26,9 +26,9 @@ class SlayerMaster(Resource):
             total_task_weight = df['weight'].sum()
         if n is None:
             n = len(df)
-        task_monster = SlayerMaster.choose_task(df, random.randint(1, n))
+        task_monster = SlayerMaster.choose_task(df, random.randint(1, total_task_weight))
         task_size = SlayerMaster.choose_task_size(df, task_monster)
-        return {'monster': task_monster, 'size': task_size}
+        return {'monster': task_monster, 'amount': task_size}
 
     @staticmethod
     def choose_task(df, value):
