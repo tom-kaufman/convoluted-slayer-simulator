@@ -12,12 +12,19 @@ enum MyError {
     HandleAwait,
     ReqwestSlayerTask,
     ReqwestSlayerTaskJson,
+    ReqwestMonsterXp,
+    ReqwestMonsterXpJson,
 }
 
 #[derive(Deserialize, Debug)]
 struct SlayerTask {
     monster: u32,
     amount: u32,
+}
+
+#[derive(Deserialize)]
+struct SlayerXp {
+    xp: f32,
 }
 
 impl Display for MyError {
@@ -27,12 +34,13 @@ impl Display for MyError {
             MyError::HandleAwait => "Some error happened while waiting for a join handle",
             MyError::ReqwestSlayerTask => "Some error happened while asking for a slayer task",
             MyError::ReqwestSlayerTaskJson => "Some error happened while parsing slayer task json",
+            MyError::ReqwestMonsterXp => "Some error happened while asking how much xp to reward for a monster",
+            MyError::ReqwestMonsterXpJson => "Some error happened while parsing slayer xp json",
         };
         write!(f, "{}", error_text)
     }
 }
 
-// placeholder function, later we'll send a request to localhost:5001
 async fn slayer_task() -> Result<SlayerTask, MyError> {
     let resp = match reqwest::get("http://127.0.0.1:5001/").await {
         Ok(x) => { x }
@@ -40,17 +48,21 @@ async fn slayer_task() -> Result<SlayerTask, MyError> {
     };
     let j = match resp.json::<SlayerTask>().await {
         Ok(x) => { x}
-        Err(e) => { 
-            println!("e: {}", e);
-            return Err(MyError::ReqwestSlayerTaskJson); 
-        }
+        Err(e) => { return Err(MyError::ReqwestSlayerTaskJson); }
     };
     Ok(j)
 }
 
-// placeholder function, later we'll send a request to localhost:5002
-fn monster_xp(monster: u32) -> f32 {
-    50.
+async fn monster_xp(monster: u32) -> Result<f32, MyError> {
+    let url = format!("http://127.0.0.1:5002/{monster}");
+    let resp = match reqwest::get(url).await {
+        Ok(x) => { x }
+        Err(_) => { return Err(MyError::ReqwestMonsterXp); }
+    };
+    match resp.json::<SlayerXp>().await {
+        Ok(x) => { Ok(x.xp) }
+        Err(e) => { return Err(MyError::ReqwestMonsterXpJson); }
+    }
 }
 
 fn total_xp(slayer: &HashMap<u32, (u32, f32)>) -> f32 {
@@ -70,7 +82,7 @@ async fn slayer_loop(slayer: Arc<Mutex<HashMap<u32, (u32, f32)>>>, delta_xp: f32
         let mut xp = 0.;
         for _ in 0..task.amount {
             kills += 1;
-            xp += monster_xp(task.monster);
+            xp += monster_xp(task.monster).await?;
         }
         this_slayer
             .entry(task.monster)
