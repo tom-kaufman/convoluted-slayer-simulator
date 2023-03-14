@@ -35,26 +35,26 @@ fn slayer_task() -> SlayerTask {
 }
 
 // placeholder function, later we'll send a request to localhost:5002
-fn monster_xp(monster: u32) -> u32 {
+fn monster_xp(monster: u32) -> f32 {
     assert_eq!(monster, 1);
-    50
+    50.
 }
 
-fn total_xp(slayer: &HashMap<u32, (u32, u32)>) -> u32 {
-    let mut result = 0;
+fn total_xp(slayer: &HashMap<u32, (u32, f32)>) -> f32 {
+    let mut result = 0.;
     for (_, xp) in slayer.values() {
         result += xp;
     }
     result
 }
 
-async fn slayer_loop(slayer: Arc<Mutex<HashMap<u32, (u32, u32)>>>, delta_xp: u32) {
+async fn slayer_loop(slayer: Arc<Mutex<HashMap<u32, (u32, f32)>>>, delta_xp: f32) {
     let mut slayer_lock = slayer.lock().await;
     let this_slayer = slayer_lock.deref_mut();
     while total_xp(this_slayer) < delta_xp {
         let task = slayer_task();
         let mut kills = 0;
-        let mut xp = 0;
+        let mut xp = 0.;
         for _ in 0..task.amount {
             kills += 1;
             xp += monster_xp(task.monster);
@@ -74,11 +74,11 @@ fn main() -> Result<(), MyError> {
     // -- start config --
 
     // n: How many Slayers to simulate
-    let n = 1_000_u32;
+    let n = 10_u32;
     // initial xp for each Slayer
-    let start_xp = 0_u32;
+    let start_xp = 0_f32;
     // final xp for each Slayer
-    let end_xp = 13_000_000_u32;
+    let end_xp = 200_000_000_f32;
 
     // -- end config --
 
@@ -91,7 +91,7 @@ fn main() -> Result<(), MyError> {
     let delta_xp = end_xp - start_xp;
 
     #[allow(clippy::type_complexity)]
-    let mut slayers: Vec<Arc<Mutex<HashMap<u32, (u32, u32)>>>> = vec![];
+    let mut slayers: Vec<Arc<Mutex<HashMap<u32, (u32, f32)>>>> = vec![];
     let mut handles: Vec<tokio::task::JoinHandle<()>> = vec![];
 
     // create tokio runtime
@@ -105,7 +105,7 @@ fn main() -> Result<(), MyError> {
         for i in 0..n {
             println!("moving slayer {i} to his own thread");
             slayers.push(Arc::new(Mutex::new(HashMap::new())));
-            let slayer: Arc<Mutex<HashMap<u32, (u32, u32)>>> = Arc::clone(&slayers[i as usize]);
+            let slayer: Arc<Mutex<HashMap<u32, (u32, f32)>>> = Arc::clone(&slayers[i as usize]);
             let handle = tokio::spawn(async move {
                 slayer_loop(slayer, delta_xp).await;
                 println!("slayer {i} met xp goal!")
@@ -133,7 +133,7 @@ fn main() -> Result<(), MyError> {
             let x = slayer_lock.deref();
             x.clone()
         })
-        .collect::<Vec<HashMap<u32, (u32, u32)>>>();
+        .collect::<Vec<HashMap<u32, (u32, f32)>>>();
 
     for (i, slayer) in slayers_convenient.iter().enumerate() {
         println!("slayer {i}:\n{:?}\n\n", slayer);
