@@ -6,6 +6,7 @@ use tokio::sync::Mutex;
 #[derive(Debug, Error)]
 enum MyError {
     InvalidConfig,
+    HandleAwait,
 }
 
 struct SlayerTask {
@@ -17,6 +18,7 @@ impl Display for MyError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let error_text = match self {
             MyError::InvalidConfig => "Invalid configuration!",
+            MyError::HandleAwait => "Some error happened while waiting for a join handle",
         };
         write!(f, "{}", error_text)
     }
@@ -70,11 +72,11 @@ async fn main() -> Result<(), MyError> {
     // -- start config --
 
     // n: How many Slayers to simulate
-    let n = 100_000_u32;
+    let n = 1_000_u32;
     // initial xp for each Slayer
     let start_xp = 0_u32;
     // final xp for each Slayer
-    let end_xp = 200_000_000_u32;
+    let end_xp = 13_000_000_u32;
 
     // -- end config --
 
@@ -91,12 +93,21 @@ async fn main() -> Result<(), MyError> {
     let mut handles: Vec<tokio::task::JoinHandle<()>> = vec![];
 
     for i in 0..n {
+        println!("moving slayer {i} to his own thread");
         slayers.push(Arc::new(Mutex::new(HashMap::new())));
         let slayer: Arc<Mutex<HashMap<u32, (u32, u32)>>> = Arc::clone(&slayers[i as usize]);
         let handle = tokio::spawn(async move {
             slayer_loop(slayer, delta_xp).await;
+            println!("slayer {i} met xp goal!")
         });
         handles.push(handle);
+    }
+
+    for handle in handles {
+        match handle.await {
+            Ok(_) => {}
+            Err(_) => { return Err(MyError::HandleAwait); }
+        }
     }
 
     Ok(())
