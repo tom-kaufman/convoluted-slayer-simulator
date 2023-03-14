@@ -27,7 +27,7 @@ impl Display for MyError {
 }
 
 // placeholder function, later we'll send a request to localhost:5001
-fn slayer_task() -> SlayerTask {
+async fn slayer_task() -> SlayerTask {
     SlayerTask {
         monster: 1,
         amount: 10,
@@ -36,7 +36,6 @@ fn slayer_task() -> SlayerTask {
 
 // placeholder function, later we'll send a request to localhost:5002
 fn monster_xp(monster: u32) -> f32 {
-    assert_eq!(monster, 1);
     50.
 }
 
@@ -52,7 +51,7 @@ async fn slayer_loop(slayer: Arc<Mutex<HashMap<u32, (u32, f32)>>>, delta_xp: f32
     let mut slayer_lock = slayer.lock().await;
     let this_slayer = slayer_lock.deref_mut();
     while total_xp(this_slayer) < delta_xp {
-        let task = slayer_task();
+        let task = slayer_task().await;
         let mut kills = 0;
         let mut xp = 0.;
         for _ in 0..task.amount {
