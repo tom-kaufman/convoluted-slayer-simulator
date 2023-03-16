@@ -93,25 +93,16 @@ async fn slayer_loop(
 ) -> Result<(), MyError> {
     let mut slayer_lock = slayer.lock().await;
     let this_slayer = slayer_lock.deref_mut();
-    let mut current_xp = total_xp(this_slayer);
-    println!("starting slayer loop with current_xp={current_xp}, delta_xp={delta_xp}");
-    while current_xp < delta_xp {
+    while total_xp(this_slayer) < delta_xp {
         let task = slayer_task().await?;
-        let mut kills = 0;
-        let mut xp = 0.;
-        for _ in 0..task.amount {
-            kills += 1;
-            xp += monster_xp(task.monster).await?;
-        }
+        let xp = task.amount as f32 * monster_xp(task.monster).await?;
         this_slayer
             .entry(task.monster)
             .and_modify(|(previous_kills, previous_xp)| {
-                *previous_kills += kills;
+                *previous_kills += task.amount;
                 *previous_xp += xp;
             })
-            .or_insert((kills, xp));
-        current_xp = total_xp(this_slayer);
-        println!("Current xp after this task: {current_xp}");
+            .or_insert((task.amount, xp));
     }
     Ok(())
 }
