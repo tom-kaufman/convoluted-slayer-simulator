@@ -43,7 +43,7 @@ impl Display for MyError {
 }
 
 async fn slayer_task() -> Result<SlayerTask, MyError> {
-    let resp = match reqwest::get("http://127.0.0.1:5001/").await {
+    let resp = match reqwest::get("http://127.0.0.1:63240/").await {
         Ok(x) => x,
         Err(_) => {
             println!("!!!!!!!!!!!!!!!!!!!!!!!!!!!1");
@@ -61,7 +61,7 @@ async fn slayer_task() -> Result<SlayerTask, MyError> {
 }
 
 async fn monster_xp(monster: u32) -> Result<f32, MyError> {
-    let url = format!("http://127.0.0.1:5002/{monster}");
+    let url = format!("http://127.0.0.1:63241/{monster}");
     let resp = match reqwest::get(url).await {
         Ok(x) => x,
         Err(e) => {
@@ -111,7 +111,7 @@ fn main() -> Result<(), MyError> {
     // -- start config --
 
     // n: How many Slayers to simulate
-    let n = 1_u32;
+    let n = 10_u32;
     // initial xp for each Slayer
     let start_xp = 0_f32;
     // final xp for each Slayer

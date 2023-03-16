@@ -30,7 +30,7 @@ api.add_resource(SlayerMonster, '/<int:monster_id>')
 
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    app.run(debug=True, port=63241)
 
 
 def create_app():
